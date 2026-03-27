@@ -1,5 +1,6 @@
 from .enums import AutonomyLevel, EscalationLevel, TaskState
 from .memory import EpisodicMemory, SemanticMemory
+from .trust import TrustScore
 from .tool import Tool
 
 __all__ = [
@@ -8,5 +9,6 @@ __all__ = [
     "EscalationLevel",
     "EpisodicMemory",
     "SemanticMemory",
+    "TrustScore",
     "Tool",
 ]

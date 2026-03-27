@@ -27,13 +27,14 @@ from morphony.lifecycle import (
     InvalidTransitionError,
     TaskLifecycleManager,
 )
-from morphony.models import AutonomyLevel, EpisodicMemory, TaskState, Tool
+from morphony.models import AutonomyLevel, EpisodicMemory, TaskState, Tool, TrustScore
 from morphony.observability import ObservabilityEngine
 from morphony.improvement import ImprovementLoopEngine
 from morphony.orchestration import QueueRunner
 from morphony.review import ReviewEngine, SelfEvaluationEngine
 from morphony.memory import EpisodicMemoryStore, MemoryPatternExtractor, SemanticMemoryStore
 from morphony.safety import EscalationEngine, SafetyController
+from morphony.trust import TrustScoreCalculator, TrustScoreStore
 from morphony.tools import LlmAnalyzeTool, ReportRenderTool, ToolRegistry, WebFetchTool, WebSearchTool
 
 app = typer.Typer(help="Morphony agent command line interface.")
@@ -42,11 +43,13 @@ tool_app = typer.Typer(help="Tool management commands.", no_args_is_help=True)
 memory_app = typer.Typer(help="Memory management commands.", no_args_is_help=True)
 queue_app = typer.Typer(help="Queue orchestration commands.", no_args_is_help=True)
 review_app = typer.Typer(help="Review commands.", no_args_is_help=True)
+trust_app = typer.Typer(help="Trust score commands.", no_args_is_help=True)
 app.add_typer(config_app, name="config")
 app.add_typer(tool_app, name="tool")
 app.add_typer(memory_app, name="memory")
 app.add_typer(queue_app, name="queue")
 app.add_typer(review_app, name="review")
+app.add_typer(trust_app, name="trust")
 console = Console()
 
 
@@ -1260,6 +1263,78 @@ def review_improve(
     table.add_row("Reasoning", report.reasoning)
     console.print(table)
     console.print(json.dumps(report.to_improvement_loop(), ensure_ascii=False, sort_keys=True))
+
+
+@trust_app.command("list")
+def trust_list(
+    feedback_file: Path = typer.Option(
+        Path("runtime/memory/episodic_feedback.jsonl"),
+        "--feedback-file",
+        help="Path to episodic feedback JSONL file.",
+    ),
+    db_file: Path = typer.Option(
+        Path("runtime/trust/trust_scores.sqlite3"),
+        "--db-file",
+        help="Path to persisted trust score SQLite database.",
+    ),
+    window_size: int = typer.Option(
+        20,
+        "--window-size",
+        min=1,
+        help="Number of recent tasks per category used for scoring.",
+    ),
+    rating_weight: float = typer.Option(
+        1.0,
+        "--rating-weight",
+        min=0.0,
+        max=1.0,
+        help="Weight applied to owner ratings when scoring is calculated.",
+    ),
+    rating_scale_max: float = typer.Option(
+        5.0,
+        "--rating-scale-max",
+        min=0.1,
+        help="Maximum owner rating used for normalization.",
+    ),
+) -> None:
+    """Show trust scores per category and persist them to SQLite."""
+    store = TrustScoreStore(db_file)
+    scores: list[TrustScore] = []
+    if feedback_file.exists():
+        scores = TrustScoreCalculator(
+            feedback_file,
+            window_size=window_size,
+            rating_weight=rating_weight,
+            rating_scale_max=rating_scale_max,
+        ).calculate()
+        if scores:
+            store.replace_all(scores)
+    if not scores:
+        scores = store.load_all()
+
+    if not scores:
+        console.print("No trust scores found.")
+        return
+
+    table = Table(title="Trust Scores")
+    table.add_column("Category")
+    table.add_column("Score", justify="right")
+    table.add_column("Tasks", justify="right")
+    table.add_column("Success", justify="right")
+    table.add_column("Avg Rating", justify="right")
+    table.add_column("Last Updated")
+
+    for score in scores:
+        table.add_row(
+            score.category,
+            f"{score.score:.2f}",
+            str(score.task_count),
+            str(score.success_count),
+            "-" if score.avg_owner_rating is None else f"{score.avg_owner_rating:.2f}",
+            _timestamp_text(score.last_updated),
+        )
+
+    console.print(table)
 
 
 @tool_app.command("list")
