@@ -1,0 +1,30 @@
+escalation:
+  l2_timeout_minutes: 15
+  l2_timeout_policy: escalate
+  l3_reminder_minutes: 30
+  l3_auto_suspend_hours: 24
+
+budget:
+  task:
+    cost_usd: 5.0
+    time_minutes: 30
+    api_calls: 100
+  daily:
+    cost_usd: 20.0
+    time_hours: 4.0
+  monthly:
+    cost_usd: 200.0
+
+improvement:
+  max_iterations: 3
+  trigger_threshold: 0.8
+  completion_threshold: 0.9
+
+memory:
+  hot_episodes: 100
+  semantic_max_per_category: 50
+  inactive_threshold_days: 90
+
+safety:
+  sandbox_enabled: true
+  kill_switch_enabled: true

@@ -1,0 +1,197 @@
+全ドキュメントと叩き案を照合し、技術スタックを精査しました。以下が私の最終回答です。
+
+```markdown
+# 技術スタック確定 & 最終判定
+
+---
+
+## 1. 技術スタック：Python 3.12 を採用する
+
+叩き案の方針は正しい。Python 3.12 を採用する。
+以下、叩き案をベースに 3 点を補強・修正する。
+
+---
+
+### 叩き案から変更・追加した点
+
+#### 補強① プロセスアーキテクチャの明示
+
+叩き案に欠けている最も重要な設計判断は「CLIと実行中エージェントの通信方法」である。
+`agent approve` や `agent stop` は実行中のエージェントプロセスに介入する必要がある。
+
+**MVP方針: 共有ストア方式（SQLite + ファイルシステム）**
+
+```
+  [agent run]  ──→  Agent Process（フォアグラウンド）
+                       │
+                       ├─ 状態を SQLite に書き込む
+                       ├─ 承認待ち時は SQLite をポーリング
+                       └─ チェックポイントを JSON ファイルに保存
+                       │
+  [agent approve]  ──→ SQLite に承認レコードを書き込む
+  [agent stop]     ──→ SQLite に停止フラグを書き込む
+  [agent status]   ──→ SQLite を読み取る（読み取り専用）
+  [agent log]      ──→ 監査ログファイルを読み取る（読み取り専用）
+```
+
+理由:
+- HTTP サーバーやソケットを立てる必要がなく、MVP の複雑性を最小化できる
+- SQLite は同一マシン上の複数プロセスからの読み書きを安全にサポートする（WALモード）
+- Phase 2 で HTTP API が必要になれば FastAPI を追加するだけ。SQLite は変えない
+
+#### 補強② 型チェッカーの追加
+
+叩き案に型チェッカーが欠けている。Pydantic v2 で型定義しても、
+呼び出し側で型チェックが通っていなければ意味がない。
+
+**追加: `pyright`（strict モード）**
+
+理由:
+- mypy より高速で、Pydantic v2 との相性が良い（プラグイン不要で動作）
+- strict モードで Issue #1 の型定義が「契約」として強制力を持つ
+- CI にも組み込みやすい
+
+#### 修正③ LLM/検索APIの位置づけを修正
+
+叩き案は `anthropic` SDK と Tavily API を確定スタックに含めているが、
+仕様上これらは Tool インターフェースの背後に隠蔽される実装詳細である。
+Issue #12（MVP ツール群）着手時の選択肢として記載し、確定スタックからは外す。
+
+理由:
+- Tool インターフェース（Issue #11）がLLMプロバイダを抽象化する設計になっている
+- 確定スタックに含めると、ツール差し替えの設計意図が損なわれる
+- Issue #12 着手時に最新のコスト・品質を比較して選定するほうが合理的
+
+---
+
+### 確定スタック（最終版）
+
+| 項目 | 採用技術 | 理由 |
+|------|---------|------|
+| 言語 / ランタイム | **Python 3.12** | AIエコシステム最強。非同期・型ヒント・パターンマッチが揃う |
+| パッケージ管理 | **uv** | Rust製で高速。pyproject.toml + ロックファイル。pip+venv を完全置換 |
+| CLI フレームワーク | **Typer + Rich** | 型ヒントで自動ヘルプ。Rich でテーブル・進捗バー・ストリーム表示 |
+| テストフレームワーク | **pytest + pytest-asyncio + pytest-cov** | 業界標準。非同期テスト + カバレッジ一体 |
+| 型チェッカー | **pyright (strict)** | Pydantic v2 と高相性。高速。型定義の契約を強制 |
+| スキーマ / バリデーション | **Pydantic v2** | Memory / Tool / Config の型定義とバリデーションを統一 |
+| 設定ロード | **PyYAML + pydantic-settings** | YAML → Pydantic モデル。safety.* は frozen=True で緩和不可 |
+| イベントバス | **asyncio (stdlib)** | 外部依存なし。Queue ベース pub/sub。将来 Redis に差替可 |
+| 永続化（メモリ） | **aiosqlite (SQLite WALモード)** | 検索・フィルタに最適。複数プロセス安全。Phase 2 で PostgreSQL に差替可 |
+| 永続化（チェックポイント） | **JSON ファイル (per task dir)** | 視認性確保。デバッグ容易 |
+| 永続化（監査ログ） | **append-only テキスト (chmod 444)** | 不変性担保。パーミッション制御 |
+| 構造化ログ | **structlog** | JSON / コンソール自動切替。監査ログ連携容易 |
+| HTTP クライアント | **httpx** | 非同期対応。web_fetch ツールの基盤 |
+| プロセス間通信 | **SQLite (共有ストア方式)** | CLI → SQLite ← Agent。HTTP不要で MVP 最小化 |
+
+### Issue #12 着手時に選定する項目（今は確定しない）
+
+| 項目 | 候補 | 選定タイミング |
+|------|------|--------------|
+| LLM SDK | anthropic / openai / litellm | Issue #12 (llm_analyze) 着手時 |
+| Web検索 API | Tavily / Brave Search / SerpAPI | Issue #12 (web_search) 着手時 |
+
+---
+
+### Issue #1 に追記する技術スタック記述
+
+```yaml
+# ===== 技術スタック =====
+language: Python 3.12
+package_manager: uv
+cli_framework: Typer + Rich
+test_framework: pytest + pytest-asyncio + pytest-cov
+type_checker: pyright (strict mode)
+
+# ===== 主要依存ライブラリ =====
+schema_validation: pydantic v2
+config_loading: PyYAML + pydantic-settings
+event_bus: asyncio (stdlib)
+persistence:
+  memory_store: aiosqlite (SQLite, WAL mode)
+  checkpoint: JSON files (per task directory)
+  audit_log: append-only text (chmod 444)
+structured_logging: structlog
+http_client: httpx
+
+# ===== プロセスアーキテクチャ (MVP) =====
+process_model: shared-store
+  # CLI commands → SQLite ← Agent process
+  # agent run: フォアグラウンドで Agent を起動
+  # agent approve/stop: SQLite に制御レコードを書き込み
+  # agent status/log: SQLite / ログファイルを読み取り（読み取り専用）
+
+# ===== Issue #12 着手時に選定 =====
+llm_sdk: TBD (候補: anthropic, openai, litellm)
+web_search_api: TBD (候補: tavily, brave-search, serpapi)
+```
+
+### 将来の拡張パス（変更不要な範囲を明示）
+
+| Phase | 変更箇所 | 変更しない箇所 |
+|-------|---------|-------------|
+| Phase 2 (マルチエージェント) | SQLite → PostgreSQL, asyncio Queue → Redis Pub/Sub | Pydantic スキーマ, Tool インターフェース, CLI 体系 |
+| Phase 2 (Web UI) | FastAPI を追加 | SQLite→PostgreSQL 移行済み前提。既存 CLI は残す |
+| Phase 3 (マルチドメイン) | ドメイン固有ツール追加 | Tool レジストリ, エスカレーション判定（ルール追加のみ） |
+
+---
+---
+
+## 2. 最終判定
+
+### 判定
+
+**Go**
+
+### 根拠
+
+前回の判定で唯一のブロッカーだった技術スタックが確定した。Python 3.12 + uv +
+Typer + pytest の4項目に加え、永続化方式（SQLite + JSON + append-only テキスト）、
+プロセスアーキテクチャ（共有ストア方式）、型チェッカー（pyright strict）まで
+決まったことで、Issue #1 の全 AC を一意に満たす実装が可能になった。
+
+計画成果物の整合性を最終確認する。要求定義で掲げた6つの成功条件（自律的タスク分解、
+経験蓄積、エスカレーション閾値制御、改善ループ、知見共有、介入コスト削減）のうち、
+MVP スコープの5条件（知見共有を除く）がすべて具体的な Issue に分解されている。
+安全設計は Epic 4（Issue #6〜#8）でL1/L2/L3・キルスイッチ・バジェット制御・
+異常検知が数値閾値付きで定義されている。brownfield 配慮は Issue #27 に autonomy_level
+（plan_only/supervised/autonomous）とappend-only マイグレーションで対応済み。
+検証方法は Issue #25（単体・安全性テスト）と #26（E2E・ベンチマーク）で定義済み。
+
+全27 Issue に Acceptance Criteria があり、依存関係が DAG として整理され、
+Phase 1（#1〜#10）→ Phase 2（#11〜#23）→ Phase 3（#24〜#27）の実装順序が
+明確である。AI に1 Issue ずつ渡せば、迷わず実装できる状態にある。
+
+重大な曖昧さは残っていない。LLM プロバイダと Web 検索 API は意図的に Issue #12
+まで選定を遅延させているが、これは Tool インターフェースによる抽象化が正しく
+機能していることの証左であり、曖昧さではなく設計上の正しい判断である。
+
+**計画フェーズはここで完了とし、実装フェーズに移行してよい。**
+
+---
+
+### 追加で詰めるべき点
+
+なし。全てのブロッカーが解消された。
+
+### ただし今は詰めなくてよい点（前回と同じ、変更なし）
+
+- 通知の配送方法（MVP は CLI ポーリングで十分）
+- LLM プロバイダ選定（Issue #12 着手時）
+- Web 検索 API 選定（Issue #12 着手時）
+- メモリの類似検索アルゴリズム（キーワードベースで MVP 十分）
+- 成果物セクション構成の詳細（Issue #12 着手時）
+
+---
+
+### 次にAIへ渡すべき最初の Issue
+
+**Issue #1: [Epic1] プロジェクトスキャフォールド & 共通型定義**
+
+上記の技術スタック記述を Issue 本文に追記した上で、そのまま着手する。
+この Issue が完了すると、pyproject.toml・ディレクトリ構成・全型定義が
+確定し、後続の全 Issue が「import して使う」だけの状態になる。
+依存なし・外部サービス接続なし・型定義のみという性質上、
+最も確実に完了でき、かつ最も大きなアンブロック効果を持つ Issue である。
+```
+
+計画フェーズは完了です。Issue #1 への着手準備が整いました。着手の指示をいただければ、プロジェクトスキャフォールドの実装を開始します。

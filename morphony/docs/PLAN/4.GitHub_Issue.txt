@@ -1,0 +1,864 @@
+全体を読み込みました。14 Epic・約40 Task を、責務を混ぜすぎずに実用的な Issue 単位に統合します。バックログの依存関係を維持しつつ、そのまま GitHub に貼れる形式で出力します。
+
+```markdown
+# GitHub Issues
+
+---
+
+## Issue #1
+### Title
+[Epic1] プロジェクトスキャフォールド & 共通型定義
+### Labels
+`epic:foundation` `P0` `schema`
+### Summary
+全 Epic の土台となるプロジェクト構造を作成し、システム全体で共有するデータモデル・
+型定義・enum を定義する。
+### Scope
+- プロジェクトディレクトリ構成（src/ tests/ configs/ docs/）
+- 依存管理ファイル、エントリポイント、README.md
+- 共通 enum: TaskState, EscalationLevel
+- 共通スキーマ型: Episodic Memory, Semantic Memory
+- 共通インターフェース型: Tool
+### Tasks
+- [ ] ディレクトリ構成の作成（src/ tests/ configs/ docs/）
+- [ ] 依存管理ファイルの作成
+- [ ] README.md にビルド・テスト手順を記載
+- [ ] TaskState enum の定義（pending/planning/approved/running/paused/suspended/completed/failed/stopped）
+- [ ] EscalationLevel enum の定義（L1/L2/L3）
+- [ ] Episodic Memory スキーマ型の定義（task_id〜metadata + execution_state）
+- [ ] Semantic Memory スキーマ型の定義（pattern_id〜success_rate）
+- [ ] Tool インターフェース型の定義（name, description, risk_level, cost_per_call, is_reversible, execute, validate, health_check）
+### Acceptance Criteria
+- [ ] `依存インストール → ビルド → テスト実行` のコマンドが通る
+- [ ] 全 enum・スキーマ型・インターフェース型がコンパイル/型チェックを通過する
+- [ ] メモリスキーマにバージョン番号フィールドが含まれている
+### Depends on
+なし（最初に着手）
+
+---
+
+## Issue #2
+### Title
+[Epic1] 設定管理システム（スキーマ・ローダー・実行時上書き）
+### Labels
+`epic:foundation` `P0` `runtime`
+### Summary
+YAML ベースの設定ファイルの読み込み・バリデーション・デフォルト値適用・
+実行時上書きを実装する。全 Epic の閾値・バジェット値がここで管理される。
+### Scope
+- agent_config.yaml のスキーマ定義 & デフォルト値
+- 設定ローダー（YAML → バリデーション → 設定オブジェクト）
+- CLI/API による実行時上書き（safety.* 緩和は拒否）
+### Tasks
+- [ ] agent_config.yaml のスキーマ定義（escalation / budget / improvement / memory / safety セクション）
+- [ ] 全セクションのデフォルト値を作成（safety は安全側: sandbox_enabled=true, kill_switch_enabled=true）
+- [ ] YAML ファイル読み込み → スキーマバリデーション → 設定オブジェクト返却のローダー実装
+- [ ] 設定ファイル不在時のデフォルト設定フォールバック
+- [ ] 必須フィールド欠落時のエラーメッセージ
+- [ ] 実行時上書き機能（safety.* 緩和は拒否、上書き値のログ記録）
+### Acceptance Criteria
+- [ ] 正常な YAML を読み込み、設定オブジェクトが返る
+- [ ] 不正な YAML / 欠落フィールドで明確なエラーメッセージが出る
+- [ ] 設定ファイルなしでもデフォルト設定で起動する
+- [ ] safety.sandbox_enabled を CLI から false に変更しようとするとエラーになる
+- [ ] 上書きされた値がログに記録される
+### Depends on
+#1
+
+---
+
+## Issue #3
+### Title
+[Epic2] イベントバス & 監査ログ
+### Labels
+`epic:event-system` `P0` `runtime`
+### Summary
+システム内の全アクションを記録するイベント発行・購読基盤と、
+改竄不可能な監査ログを実装する。全 Epic がこの基盤に依存する。
+### Scope
+- イベント型定義（task_started, task_completed, step_started, step_completed,
+  escalation_triggered, error_occurred, budget_consumed, checkpoint_saved, state_changed）
+- イベントバス（publish / subscribe）
+- 監査ログライター（append-only、タイムスタンプ付き、不変性）
+- 監査ログリーダー（task_id / event_type / 時間範囲フィルタ）
+### Tasks
+- [ ] イベント型の定義
+- [ ] イベントバスの実装（publish / subscribe、同期・非同期ハンドラ対応）
+- [ ] 監査ログライターの実装（append-only ファイル、パーミッション制御）
+- [ ] ログエントリフォーマット：task_id, event_type, timestamp, payload
+- [ ] 監査ログリーダーの実装（task_id / event_type / 時間範囲フィルタ）
+### Acceptance Criteria
+- [ ] イベントを publish すると、subscribe 済みの全ハンドラが呼ばれる
+- [ ] 全イベントがタイムスタンプ付きで append-only ファイルに書き込まれる
+- [ ] ログファイルがエージェントプロセスから上書き・削除できない（パーミッション）
+- [ ] task_id / event_type / 時間範囲でフィルタして監査ログを取得できる
+### Depends on
+#1
+
+---
+
+## Issue #4
+### Title
+[Epic3] タスク状態マシン & キュー
+### Labels
+`epic:lifecycle` `P0` `runtime`
+### Summary
+タスクの有限状態マシンと排他制御付きタスクキューを実装する。
+全ての状態遷移はイベントとして発行され、永続化される。
+### Scope
+- TaskState 間の有効遷移定義と遷移エンジン
+- 無効遷移時のエラーハンドリング
+- 遷移ごとの state_changed イベント発行
+- 状態と遷移履歴の永続化
+- タスクキュー（MVP: running は同時1つまで）
+### Tasks
+- [ ] 有効な状態遷移マップの定義
+- [ ] 状態遷移エンジンの実装（遷移実行 + バリデーション）
+- [ ] 無効遷移時のエラーハンドリング
+- [ ] 遷移ごとの state_changed イベント発行
+- [ ] 現在の状態と遷移履歴の永続化
+- [ ] タスクキューの実装（running は1つまで、2つ目は pending キューへ）
+- [ ] 先行タスク完了後のキュー自動消化
+### Acceptance Criteria
+- [ ] 定義済みの有効遷移のみが成功し、無効遷移ではエラーが発生する
+- [ ] 全遷移で state_changed イベントが発行される
+- [ ] 状態と遷移履歴がプロセス再起動後も復元できる
+- [ ] 2つ目のタスク投入時に pending キューに入り、先行完了後に自動開始される
+### Depends on
+#1, #3
+
+---
+
+## Issue #5
+### Title
+[Epic3] チェックポイント & 障害復旧
+### Labels
+`epic:lifecycle` `P0` `runtime`
+### Summary
+ステップ単位のチェックポイント保存と、障害分類に基づくリトライ・
+リカバリ・再開を実装する。
+### Scope
+- チェックポイント保存（完了ステップ一覧、中間成果物、消費バジェット）
+- 障害分類（Transient / Permanent / Fatal）
+- Transient リトライ（最大3回、指数バックオフ）
+- Permanent 代替手段試行
+- Fatal 停止 & 部分成果物保全 & L3 報告
+- チェックポイントからの再開
+### Tasks
+- [ ] チェックポイントデータ構造の定義（バージョン番号付き）
+- [ ] ステップ完了時のチェックポイント保存ロジック
+- [ ] 障害分類 enum（Transient / Permanent / Fatal）の定義
+- [ ] Transient: 指数バックオフリトライ（最大3回）
+- [ ] Permanent: ステップスキップ + 代替手段試行
+- [ ] Fatal: タスク停止、部分成果物保全、オーナーに L3 報告
+- [ ] チェックポイントからの再開ロジック
+- [ ] 破損チェックポイント検知とエラーハンドリング
+### Acceptance Criteria
+- [ ] 各ステップ完了時にチェックポイントが永続化される
+- [ ] Transient 障害で最大3回リトライ後に次の分類へ昇格する
+- [ ] Fatal 障害で部分成果物が保全され、L3 報告が発行される
+- [ ] `agent resume <task_id>` で最後のチェックポイントから再開できる
+- [ ] 再開時のログに「どこから再開するか」が記録される
+- [ ] 破損チェックポイントで明確なエラーメッセージが出て停止する
+### Depends on
+#3, #4
+
+---
+
+## Issue #6
+### Title
+[Epic4] エスカレーション判定エンジン（L1/L2/L3）
+### Labels
+`epic:safety` `P0` `runtime`
+### Summary
+アクションごとのリスクレベル判定、L2 通知＆タイムアウト処理、
+L3 承認待ち＆リマインド＆自動サスペンドを実装する。
+### Scope
+- リスクレベル判定関数（アクション名 + コンテキスト → L1/L2/L3）
+- リサーチドメインのアクション分類ルール
+- Fail-safe デフォルト（不明時は上位レベル）
+- L2: 通知 → タイムアウト → ポリシー適用（auto_proceed/escalate/pause）
+- L3: 承認待ち → リマインド（30分）→ 自動サスペンド（24時間）
+### Tasks
+- [ ] リスクレベル判定関数の実装
+- [ ] リサーチドメインのアクション分類表をルールとして組み込み
+- [ ] Fail-safe: ルール該当なし → 上位レベルに倒す
+- [ ] L2 通知送信の実装
+- [ ] L2 タイムアウト処理（デフォルト15分、設定変更可能）
+- [ ] L2 タイムアウト後のポリシー適用（デフォルト: escalate）
+- [ ] L3 承認待ち状態（waiting_approval）への遷移
+- [ ] L3 リマインド通知（30分後、設定変更可能）
+- [ ] L3 自動サスペンド（24時間応答なし、部分成果物保全）
+### Acceptance Criteria
+- [ ] 公開情報の検索 → L1 判定、最終成果物の確定 → L3 判定が正しく動作する
+- [ ] ルールに該当しないアクションで上位レベル（安全側）に倒れる
+- [ ] L2 通知後、設定時間経過で escalate ポリシーが発動する
+- [ ] L3 承認待ちで 30 分後にリマインド、24 時間後に自動サスペンドが動作する
+- [ ] 全エスカレーションが escalation_triggered イベントとして記録される
+### Depends on
+#2, #3, #4
+
+---
+
+## Issue #7
+### Title
+[Epic4] キルスイッチ & 異常検知
+### Labels
+`epic:safety` `P0` `runtime`
+### Summary
+オーナーによる即時停止と、自律的な異常検知による自動停止を実装する。
+### Scope
+- キルスイッチ（即時停止 + 成果物保全 + ログ記録）
+- 異常検知: コスト急増（直近5アクション平均の3倍超）
+- 異常検知: 同一アクション異常繰り返し（同ツール+同入力で5回以上）
+- 異常検知時の L3 エスカレーション
+### Tasks
+- [ ] キルスイッチ: 即時停止 + 部分成果物/チェックポイント保全
+- [ ] キルスイッチ: 停止イベントの監査ログ記録
+- [ ] 異常検知: 直近5アクションのコスト平均の3倍超 → 自動停止
+- [ ] 異常検知: 同一ツール+入力で5回以上繰り返し → 自動停止
+- [ ] 異常検知時の L3 エスカレーション報告
+### Acceptance Criteria
+- [ ] `agent stop <task_id>` で実行中タスクが即座に停止する
+- [ ] 停止後に部分成果物とチェックポイントが残っている
+- [ ] コスト急増を意図的に発生させると自動停止が発動する
+- [ ] 同一アクション5回繰り返しで自動停止が発動する
+- [ ] 全停止が監査ログに記録される
+### Depends on
+#3, #5, #6
+
+---
+
+## Issue #8
+### Title
+[Epic4] バジェット制御エンジン（三層モデル）
+### Labels
+`epic:safety` `P0` `runtime`
+### Summary
+タスク/日次/月次の三層バジェットの消費追跡と、
+残量に応じた4段階の自動制御を実装する。
+### Scope
+- バジェットトラッカー（金額・時間・API呼出回数の3軸 × 3層）
+- アクション実行前のバジェット残量チェック
+- 4段階制御（>50%: L1, 20-50%: 効率重視, 5-20%: L2通知, <5%: L3停止）
+- バジェット消費イベントの発行
+### Tasks
+- [ ] バジェットトラッカーのデータ構造（3軸 × 3層）
+- [ ] アクション実行前のバジェット残量チェックロジック
+- [ ] 残量4段階の制御ロジック
+- [ ] ツール呼び出しごとのコスト自動計算・記録
+- [ ] 経過時間のリアルタイム追跡
+- [ ] budget_consumed イベントの発行
+### Acceptance Criteria
+- [ ] タスク/日次/月次の各層でコストが正しく追跡される
+- [ ] バジェット残量 >50% で自動実行、<5% で停止が動作する
+- [ ] 20-50% で効率重視モード切替、5-20% でオーナー通知が動作する
+- [ ] 全消費が budget_consumed イベントとして記録される
+### Depends on
+#2, #3
+
+---
+
+## Issue #9
+### Title
+[Epic5] コア CLI コマンド（run / status / approve / reject / stop / pause / resume / feedback）
+### Labels
+`epic:cli` `P0` `operations`
+### Summary
+オーナーがエージェントを操作するための基本 CLI コマンドを実装する。
+Gate モデルと安全制御を人間側から駆動するための必須インターフェース。
+### Scope
+- agent run / status / approve / reject / stop / pause / resume / feedback
+### Tasks
+- [ ] `agent run "<goal>"` → タスク作成 → task_id 返却
+- [ ] `agent status` → 全タスク一覧表示
+- [ ] `agent status <task_id>` → 詳細表示（ステップ, バジェット残, 経過時間）
+- [ ] `agent approve <task_id>` → Gate 1/L3 承認
+- [ ] `agent reject <task_id> --reason "..."` → 却下 + 理由記録
+- [ ] `agent stop <task_id>` → キルスイッチ
+- [ ] `agent pause <task_id>` → 一時停止（チェックポイント保存後）
+- [ ] `agent resume <task_id>` → チェックポイントから再開
+- [ ] `agent feedback <task_id> --rating <1-5> --comment "..."` → フィードバック記録
+- [ ] 対象なし時のエラーメッセージ（承認対象なし等）
+### Acceptance Criteria
+- [ ] 全コマンドがヘルプ付きで実行可能
+- [ ] `agent run` でタスクが作成され、`agent status` で確認できる
+- [ ] `agent approve` / `reject` で Gate 承認フローが動作する
+- [ ] `agent stop` でキルスイッチが発動する
+- [ ] `agent feedback` で Episodic Memory に記録される
+### Depends on
+#2, #4, #5, #6, #7, #8
+
+---
+
+## Issue #10
+### Title
+[Epic5] 運用系 CLI コマンド（log / config / health）
+### Labels
+`epic:cli` `P0` `operations`
+### Summary
+監査ログ参照・設定管理・ヘルスチェックの運用系 CLI を実装する。
+### Scope
+- agent log / config show / config set / health
+### Tasks
+- [ ] `agent log <task_id>` → 監査ログ時系列表示
+- [ ] `agent config show` → 現在の設定表示
+- [ ] `agent config set <key> <value>` → 設定変更（safety.* 緩和は拒否）
+- [ ] `agent health` → 各ツール稼働状態の一覧表示
+### Acceptance Criteria
+- [ ] `agent log` で task_id のログが時系列で表示される
+- [ ] `agent config show` で全設定値が表示される
+- [ ] `agent config set safety.sandbox_enabled false` がエラーになる
+- [ ] `agent health` でツールごとの UP/DOWN が表示される
+### Depends on
+#2, #3, #9
+
+---
+
+## Issue #11
+### Title
+[Epic6] ツールレジストリ & 実行ラッパー
+### Labels
+`epic:tools` `P1` `runtime`
+### Summary
+ツールの登録・検索・ヘルスチェックの仕組みと、
+バリデーション・バジェット確認・エスカレーション確認を含む実行ラッパーを実装する。
+### Scope
+- ツールレジストリ（登録・名前検索・一括ヘルスチェック）
+- ツール登録時の L3 承認
+- 実行ラッパー（validate → バジェット確認 → エスカレーション確認 → execute → ログ記録）
+### Tasks
+- [ ] ツールレジストリの実装（登録・名前検索・一括ヘルスチェック）
+- [ ] ツール登録時の L3 承認連携
+- [ ] 実行ラッパー: validate(input) → バジェット確認 → エスカレーション判定 → execute
+- [ ] 実行結果（input, output, duration, cost, status）のログ記録
+### Acceptance Criteria
+- [ ] Tool インターフェースを満たすオブジェクトを登録・検索できる
+- [ ] 全ツールのヘルスチェックを一括実行できる
+- [ ] ツール登録時に L3 承認フローが走る
+- [ ] 実行ラッパー経由で全ツール呼び出しにバリデーション・バジェット確認・ログ記録が適用される
+### Depends on
+#1, #6, #8
+
+---
+
+## Issue #12
+### Title
+[Epic6] MVP ツール群（web_search / web_fetch / llm_analyze / report_render）
+### Labels
+`epic:tools` `P1` `runtime`
+### Summary
+リサーチに必要な4つの基本ツールを Tool インターフェースに準拠して実装する。
+### Scope
+- web_search（Web検索）
+- web_fetch（Webページ取得・テキスト化）
+- llm_analyze（LLM分析・要約）
+- report_render（Markdownレポート生成）
+### Tasks
+- [ ] web_search: 検索クエリ → 検索結果（タイトル, URL, スニペット）
+- [ ] web_search: risk_level=L1, is_reversible=true, health_check 実装
+- [ ] web_fetch: URL → テキスト化ページ内容、タイムアウト30秒
+- [ ] web_fetch: risk_level=L1, is_reversible=true, health_check 実装
+- [ ] llm_analyze: テキスト+指示 → 分析結果、トークンコスト自動計算
+- [ ] llm_analyze: risk_level=L1, cost_per_call 設定
+- [ ] report_render: 構造化データ → Markdown（要約/詳細/ソース一覧/メタデータ）
+- [ ] report_render: risk_level=L1, is_reversible=true
+### Acceptance Criteria
+- [ ] 4ツール全てが Tool インターフェースに準拠している
+- [ ] 各ツールの health_check が正常に動作する
+- [ ] llm_analyze のコストが自動計算されバジェットに反映される
+- [ ] report_render が仕様通りのセクション構成で Markdown を出力する
+### Depends on
+#11
+
+---
+
+## Issue #13
+### Title
+[Epic6] ツール管理 CLI（tool list / tool add）
+### Labels
+`epic:tools` `P1` `operations`
+### Summary
+登録済みツールの一覧表示とプラグイン追加の CLI コマンドを実装する。
+### Scope
+- agent tool list
+- agent tool add
+### Tasks
+- [ ] `agent tool list` → 名前、risk_level、稼働状態の一覧表示
+- [ ] `agent tool add <plugin_path>` → プラグイン読み込み → L3 承認 → 登録
+### Acceptance Criteria
+- [ ] `agent tool list` で全ツールの名前・risk_level・UP/DOWN が表示される
+- [ ] `agent tool add` で L3 承認後にツールが登録される
+### Depends on
+#9, #11
+
+---
+
+## Issue #14
+### Title
+[Epic7] Episodic Memory ストア（CRUD & 検索）
+### Labels
+`epic:memory` `P1` `runtime`
+### Summary
+タスク単位の実行記録を保存・検索する Episodic Memory ストアを実装する。
+削除不可（監査要件）。スキーマバージョン付き。
+### Scope
+- エピソードの作成・読取・更新（削除不可）
+- execution_state フィールド（チェックポイント用）
+- 検索（task_id 完全一致、goal テキスト類似、カテゴリ・期間フィルタ）
+### Tasks
+- [ ] Episodic Memory CRUD の実装（Create / Read / Update、Delete は禁止）
+- [ ] 全スキーマフィールド + execution_state の保存
+- [ ] スキーマバージョン番号の付与
+- [ ] task_id 完全一致検索
+- [ ] goal テキストでの類似検索（キーワードベース）
+- [ ] カテゴリ・期間フィルタリング
+### Acceptance Criteria
+- [ ] エピソードの作成・読取・更新ができ、削除操作はエラーになる
+- [ ] 全フィールドが正しく保存・復元される
+- [ ] task_id / goal テキスト / カテゴリ / 期間で検索・フィルタできる
+### Depends on
+#1, #3
+
+---
+
+## Issue #15
+### Title
+[Epic7] Semantic Memory ストア（CRUD & 検索 & 衝突解決）
+### Labels
+`epic:memory` `P1` `runtime`
+### Summary
+汎化された知見パターンを保存・検索する Semantic Memory ストアと、
+矛盾パターンの衝突解決ロジックを実装する。
+### Scope
+- パターンの作成・読取・更新・非アクティブ化（削除不可）
+- 検索（category フィルタ、アクティブのみ、confidence+success_rate ソート）
+- パターン衝突解決（source_episodes 多い方優先 → 同数なら新しい方）
+### Tasks
+- [ ] Semantic Memory CRUD の実装（非アクティブ化のみ、削除不可）
+- [ ] 全スキーマフィールドの保存
+- [ ] category フィルタ、アクティブのみ検索
+- [ ] confidence + success_rate ソート
+- [ ] 衝突検出ロジック（同カテゴリの矛盾パターン検出）
+- [ ] 衝突解決ルール（source_episodes 多い方優先、同数なら新しい方）
+- [ ] conflict_detected イベントの発行
+### Acceptance Criteria
+- [ ] パターンの CRUD + 非アクティブ化が動作し、削除はエラーになる
+- [ ] アクティブパターンのみが検索結果に含まれる
+- [ ] 矛盾パターン検出時に正しい優先ルールが適用される
+- [ ] 衝突発生が conflict_detected イベントとして記録される
+### Depends on
+#1, #3
+
+---
+
+## Issue #16
+### Title
+[Epic7] パターン抽出エンジン & メモリ管理 CLI
+### Labels
+`epic:memory` `P1` `runtime` `operations`
+### Summary
+エピソードからセマンティックパターンを自動抽出するエンジンと、
+メモリ参照用の CLI コマンドを実装する。
+### Scope
+- パターン抽出（同カテゴリ N 件で自動トリガー → LLM で汎化 → Semantic Memory 保存）
+- agent memory list / show CLI
+### Tasks
+- [ ] 同カテゴリのエピソードが N 件（デフォルト3、設定変更可能）でパターン抽出自動トリガー
+- [ ] extracted_lessons の共通要素を LLM で汎化し Semantic Memory に保存
+- [ ] 生成パターンに source_episodes を紐付け
+- [ ] `agent memory list` → Semantic Memory をカテゴリ別一覧表示
+- [ ] `agent memory show <pattern_id>` → パターン詳細 + 紐付きエピソード一覧
+### Acceptance Criteria
+- [ ] 同カテゴリ3件のエピソード蓄積でパターン抽出が自動実行される
+- [ ] 生成されたパターンに source_episodes が紐付いている
+- [ ] `agent memory list` / `agent memory show` が正しく表示される
+### Depends on
+#12, #14, #15
+
+---
+
+## Issue #17
+### Title
+[Epic8] 目的解釈（Goal Parser）& 解釈検証
+### Labels
+`epic:planning` `P1` `runtime`
+### Summary
+オーナーの自然言語目的を構造化された goal_parsed に変換し、
+Gate 1 で解釈結果をオーナーに提示・確認する仕組みを実装する。
+### Scope
+- Goal Parser（自然言語 → {対象, 調査項目, 粒度, 期限, 除外事項}）
+- 確信度付与
+- 解釈検証フォーマット（原文 / 解釈結果 / 確認プロンプト）
+- オーナー修正時の上書き
+- goal ↔ goal_parsed ペアの学習データ蓄積
+### Tasks
+- [ ] Goal Parser の実装（LLM ベースで構造化抽出）
+- [ ] 各フィールドへの確信度付与
+- [ ] 期限未指定時のデフォルト値（当日中）適用
+- [ ] 解釈検証フォーマットの定義（原文 / 解釈 / 確認プロンプト）
+- [ ] オーナー修正時の goal_parsed 上書き
+- [ ] goal ↔ goal_parsed ペアの Episodic Memory への蓄積
+### Acceptance Criteria
+- [ ] 自然言語目的から {対象, 調査項目, 粒度, 期限, 除外事項} が抽出される
+- [ ] 期限未指定で「当日中」がデフォルト適用される
+- [ ] Gate 1 で解釈検証フォーマットがオーナーに提示される
+- [ ] オーナー修正後の goal_parsed で上書きされる
+- [ ] ペアデータが Episodic Memory に蓄積される
+### Depends on
+#12, #14
+
+---
+
+## Issue #18
+### Title
+[Epic8] 調査計画立案エンジン & Gate 1 承認フロー
+### Labels
+`epic:planning` `P1` `runtime`
+### Summary
+goal_parsed + Semantic Memory + 利用可能ツールから実行計画を生成し、
+Gate 1 でオーナー承認を得るフローを実装する。
+### Scope
+- 計画立案（ステップ配列生成: ツール・入力・期待出力・推定コスト）
+- Semantic Memory 参照による計画最適化
+- 推定総コストのバジェット内調整
+- Gate 1 承認/却下フロー
+### Tasks
+- [ ] 計画立案エンジン: goal_parsed → ステップ配列（ツール, 入力, 期待出力, 推定コスト）
+- [ ] Semantic Memory から類似パターン検索 → 計画反映
+- [ ] 利用可能ツール一覧参照 → ステップへのツール割り当て
+- [ ] 推定総コストのバジェット内調整
+- [ ] Gate 1: 計画をオーナーに提示 → 承認待ち
+- [ ] 承認 → running 遷移、却下 → 理由記録 → 再計画可能
+### Acceptance Criteria
+- [ ] goal_parsed からステップ配列が生成される
+- [ ] Semantic Memory のパターンが計画に反映される
+- [ ] 推定総コストがタスクバジェット内に収まる
+- [ ] Gate 1 で承認 → running、却下 → 再計画のフローが動作する
+### Depends on
+#6, #11, #15, #17
+
+---
+
+## Issue #19
+### Title
+[Epic9] ステップ実行エンジン & OODA ループ
+### Labels
+`epic:orchestrator` `P1` `runtime`
+### Summary
+計画のステップを順次実行し、各ステップで OODA ループによる
+動的調整を行う実行オーケストレータを実装する。
+### Scope
+- ステップ順次実行（バジェット確認 + エスカレーション判定 → 実行 → チェックポイント → ログ記録）
+- OODA ループ（出力評価 → 次ステップ入力調整 / リトライ / 代替ツール）
+- 自律的微調整（L1）と方針転換通知（L2）
+### Tasks
+- [ ] ステップ実行ループ: バジェット確認 → エスカレーション判定 → ツール実行
+- [ ] 各ステップ完了後のチェックポイント保存
+- [ ] execution_log への記録（action, input, output, duration, cost, status）
+- [ ] OODA: 出力評価 → 次ステップ入力の動的調整
+- [ ] OODA: 不十分な出力時のリトライ / 代替ツール切替
+- [ ] 自律的微調整（L1: 順序変更, 情報源切替）
+- [ ] 大幅方針転換時のオーナー通知（L2）
+### Acceptance Criteria
+- [ ] 全ステップが順次実行され、各ステップで execution_log に記録される
+- [ ] 各ステップ完了時にチェックポイントが保存される
+- [ ] 出力不十分時にリトライまたは代替ツール切替が試行される
+- [ ] L1 微調整は自動実行、L2 方針転換はオーナーに通知される
+### Depends on
+#5, #6, #8, #11, #18
+
+---
+
+## Issue #20
+### Title
+[Epic9] 成果物ドラフト生成 & Gate 2 フロー
+### Labels
+`epic:orchestrator` `P1` `runtime`
+### Summary
+全ステップの実行結果を統合して Markdown レポートを生成し、
+Gate 2 でオーナー確認・承認を得るフローを実装する。
+### Scope
+- 実行結果の統合 → report_render でレポート生成
+- 成果物のバージョン付き保存（result_v{N}.md）
+- Gate 2 承認/フィードバックフロー
+### Tasks
+- [ ] 全ステップ出力の統合ロジック
+- [ ] report_render ツールによる Markdown レポート生成
+- [ ] result_v{N}.md としてタスクディレクトリに保存
+- [ ] Gate 2: オーナーに成果物提示 → 承認待ち
+- [ ] 承認 → タスク完了、フィードバック → 改善ループへ
+### Acceptance Criteria
+- [ ] 全ステップの出力が統合され Markdown レポートが生成される
+- [ ] 成果物が result_v{N}.md として保存される
+- [ ] Gate 2 承認で完了、フィードバックで改善ループへ遷移する
+### Depends on
+#12, #19
+
+---
+
+## Issue #21
+### Title
+[Epic10] 自己評価エンジン（スコアリング / チェックリスト / ファクトチェック）
+### Labels
+`epic:improvement` `P1` `runtime`
+### Summary
+成果物の品質を多角的に評価する自己評価エンジンを実装する。
+スコアリング・客観的チェックリスト・簡易ファクトチェックの3層で評価。
+### Scope
+- 4観点スコアリング（目的達成度・情報信頼性・構造明瞭さ・効率）
+- 客観的チェックリスト（5項目）
+- 簡易ファクトチェック（別ソース裏取り + [要検証] ラベル）
+### Tasks
+- [ ] 4観点スコアリング: 各 0.0〜1.0 + reasoning
+- [ ] 総合スコア goal_achievement の算出
+- [ ] チェックリスト: 全項目回答済み / 2ソース以上 / エビデンス付き / 両論併記 / 鮮度明示
+- [ ] ファクトチェック: 事実主張の別ソース裏取り試行
+- [ ] 裏取り不能な主張への [要検証] ラベル付与
+- [ ] ファクトチェックコストのバジェット消費
+### Acceptance Criteria
+- [ ] 4観点で各 0.0〜1.0 のスコアと reasoning が出力される
+- [ ] チェックリスト結果が self_evaluation に含まれる
+- [ ] 裏取り不能な主張に [要検証] ラベルが付与される
+- [ ] ファクトチェックのコストがバジェットに反映される
+### Depends on
+#12, #20
+
+---
+
+## Issue #22
+### Title
+[Epic10] 改善ループ（判定 / 劣化検知 / ロールバック / 教訓抽出）
+### Labels
+`epic:improvement` `P1` `runtime`
+### Summary
+自己評価に基づく改善判定・反復実行・劣化検知・ロールバック・教訓抽出を実装する。
+タスク完了時に全データを Episodic Memory に保存する。
+### Scope
+- 改善判定（トリガー: <0.8、終了: ≥0.9 or 反復上限 or バジェット上限）
+- 劣化検知（前回比スコア低下 → 中止 + ロールバック）
+- 教訓抽出（extracted_lessons 自動生成）
+- Episodic Memory への全データ保存
+- オーナー評価との乖離記録
+### Tasks
+- [ ] 改善トリガー判定: goal_achievement < 0.8（設定変更可能）
+- [ ] 改善終了条件: ≥0.9 / 反復上限（デフォルト3回）/ バジェット <5%
+- [ ] 改善ループの反復実行（計画再立案 → 実行 → 再評価）
+- [ ] 劣化検知: 前回よりスコア低下 → 改善中止
+- [ ] ロールバック: 前回の result_v{N-1}.md を final として採用
+- [ ] 教訓抽出: extracted_lessons の自動生成
+- [ ] Episodic Memory への全データ保存
+- [ ] オーナーフィードバックとの乖離記録
+### Acceptance Criteria
+- [ ] goal_achievement < 0.8 で改善ループに入る
+- [ ] 反復上限 / バジェット上限 / スコア達成で改善が終了する
+- [ ] スコア低下時に前回成果物にロールバックされる
+- [ ] 劣化検知イベントがログに記録される
+- [ ] タスク完了時に全データが Episodic Memory に保存される
+### Depends on
+#14, #19, #20, #21
+
+---
+
+## Issue #23
+### Title
+[Epic11] 可観測性（ステータスAPI / イベントストリーム / サマリーレポート）
+### Labels
+`epic:observability` `P1` `operations`
+### Summary
+リアルタイム進捗監視のためのステータスAPI・イベントストリーム購読と、
+タスク完了時の自動サマリーレポートを実装する。
+### Scope
+- ステータスAPI（状態、ステップ進捗、バジェット残、経過時間）
+- イベントストリーム購読（`agent watch`）
+- タスク完了サマリーの自動生成（summary.md）
+### Tasks
+- [ ] ステータス API の実装（状態、完了/全ステップ、バジェット残、経過時間）
+- [ ] `agent status <task_id>` がステータス API を利用するように統合
+- [ ] `agent watch <task_id>` によるイベントストリームのリアルタイム購読
+- [ ] event_type フィルタリング
+- [ ] タスク完了時のサマリー自動生成（所要時間、コスト、エスカレーション回数、改善回数、最終スコア）
+- [ ] summary.md のタスクディレクトリへの保存
+### Acceptance Criteria
+- [ ] ステータス API が正しいタスク状態を返す
+- [ ] `agent watch` でリアルタイムにイベントが表示される
+- [ ] タスク完了時に summary.md が自動生成される
+### Depends on
+#3, #4, #9
+
+---
+
+## Issue #24
+### Title
+[Epic12] 成果物バージョニング & ディレクトリ管理
+### Labels
+`epic:artifacts` `P2` `runtime`
+### Summary
+成果物のバージョン付き保存、final エイリアス、
+タスクごとの出力ディレクトリ構成を実装する。
+### Scope
+- result_v{N}.md のバージョン管理
+- result_final.md エイリアス
+- /output/{task_id}/ ディレクトリ構成
+- Episodic Memory result フィールドからのパス参照
+### Tasks
+- [ ] 改善反復ごとの result_v{N}.md 保存
+- [ ] result_final.md のエイリアス作成
+- [ ] ロールバック時の final 参照先更新
+- [ ] /output/{task_id}/ ディレクトリ自動作成
+- [ ] Episodic Memory result フィールドとの連携
+### Acceptance Criteria
+- [ ] 改善3回で result_v1.md, v2.md, v3.md と result_final.md が存在する
+- [ ] ロールバック時に final が前バージョンを指す
+- [ ] Episodic Memory から成果物パスが参照できる
+### Depends on
+#20, #22
+
+---
+
+## Issue #25
+### Title
+[Epic13] 単体テスト & 安全性テスト
+### Labels
+`epic:quality` `P2` `quality`
+### Summary
+コアモジュールの単体テストと、安全機構の動作を検証する安全性テストを実装する。
+### Scope
+- 状態マシン / エスカレーション判定 / バジェット計算 / メモリ CRUD の単体テスト
+- 安全性テスト（スコープ外 → L3、バジェット超過 → 停止、障害注入 → リカバリ）
+### Tasks
+- [ ] 状態マシンの単体テスト（有効/無効遷移）
+- [ ] エスカレーション判定の単体テスト（各アクション → 正しいレベル）
+- [ ] バジェット計算の単体テスト（各層の消費・閾値判定）
+- [ ] メモリ CRUD の単体テスト（Episodic / Semantic）
+- [ ] 安全性テスト: スコープ外指示 → L3 発火
+- [ ] 安全性テスト: バジェット超過 → 停止
+- [ ] 安全性テスト: 障害注入 → リカバリ動作
+### Acceptance Criteria
+- [ ] 単体テストカバレッジ 80% 以上
+- [ ] スコープ外指示で L3 エスカレーションが確認される
+- [ ] バジェット超過で停止が確認される
+- [ ] 障害注入でリカバリが確認される
+### Depends on
+#4, #5, #6, #7, #8, #14, #15
+
+---
+
+## Issue #26
+### Title
+[Epic13] E2E シナリオテスト & ベンチマーク基盤
+### Labels
+`epic:quality` `P2` `quality`
+### Summary
+事前定義のリサーチ目的による E2E テストと、
+品質推移を追跡する評価ベンチマーク基盤を実装する。
+### Scope
+- E2E シナリオテスト（3件以上、モックツール使用）
+- 評価ベンチマーク（固定課題セット10題以上、スコア・コスト・時間の推移記録）
+### Tasks
+- [ ] モックツール群の実装（コスト0で動作するテスト用ツール）
+- [ ] E2E シナリオテスト: 3件以上のリサーチ目的で全フロー検証
+- [ ] ベンチマーク課題セット（10題以上）の作成
+- [ ] 品質スコア・コスト・所要時間の推移記録・比較機能
+### Acceptance Criteria
+- [ ] 3件以上の E2E シナリオが全フロー通過する
+- [ ] モックツールでコスト0実行が可能
+- [ ] ベンチマーク結果の推移が記録・比較できる
+### Depends on
+#22, #23
+
+---
+
+## Issue #27
+### Title
+[Epic14] brownfield 対応（段階的導入 / データインポート / スキーママイグレーション）
+### Labels
+`epic:extension` `P2` `runtime` `operations`
+### Summary
+段階的導入モード、既存データの取り込み、メモリスキーマの
+後方互換マイグレーションを実装する。
+### Scope
+- autonomy_level 設定（plan_only / supervised / autonomous）
+- Episodic Memory 一括インポート（JSON/YAML）
+- スキーマバージョニング & 自動マイグレーション（append only）
+### Tasks
+- [ ] autonomy_level 設定の実装（plan_only / supervised / autonomous）
+- [ ] plan_only モード: Gate 1 まで実行し、自律実行は行わない
+- [ ] Episodic Memory インポート: JSON/YAML → バリデーション → 一括登録
+- [ ] インポート結果の表示（成功/失敗件数、エラー詳細）
+- [ ] スキーマバージョン番号の管理
+- [ ] 旧バージョンデータの自動マイグレーション（フィールド追加のみ）
+### Acceptance Criteria
+- [ ] plan_only で Gate 1 まで実行し、自律実行が行われない
+- [ ] JSON/YAML のエピソードデータが一括インポートできる
+- [ ] 旧バージョンスキーマのデータが自動マイグレーションされる
+- [ ] マイグレーションが append only（破壊的変更なし）である
+### Depends on
+#2, #11, #14, #15
+
+---
+---
+
+# Issue 一覧 & 依存関係マップ
+
+| Issue | Title | Epic | Priority | Depends on |
+|-------|-------|------|----------|------------|
+| #1  | プロジェクトスキャフォールド & 共通型定義 | 1 | P0 | — |
+| #2  | 設定管理システム | 1 | P0 | #1 |
+| #3  | イベントバス & 監査ログ | 2 | P0 | #1 |
+| #4  | タスク状態マシン & キュー | 3 | P0 | #1, #3 |
+| #5  | チェックポイント & 障害復旧 | 3 | P0 | #3, #4 |
+| #6  | エスカレーション判定エンジン | 4 | P0 | #2, #3, #4 |
+| #7  | キルスイッチ & 異常検知 | 4 | P0 | #3, #5, #6 |
+| #8  | バジェット制御エンジン | 4 | P0 | #2, #3 |
+| #9  | コア CLI コマンド | 5 | P0 | #2, #4, #5, #6, #7, #8 |
+| #10 | 運用系 CLI コマンド | 5 | P0 | #2, #3, #9 |
+| #11 | ツールレジストリ & 実行ラッパー | 6 | P1 | #1, #6, #8 |
+| #12 | MVP ツール群 | 6 | P1 | #11 |
+| #13 | ツール管理 CLI | 6 | P1 | #9, #11 |
+| #14 | Episodic Memory ストア | 7 | P1 | #1, #3 |
+| #15 | Semantic Memory ストア | 7 | P1 | #1, #3 |
+| #16 | パターン抽出エンジン & メモリ CLI | 7 | P1 | #12, #14, #15 |
+| #17 | Goal Parser & 解釈検証 | 8 | P1 | #12, #14 |
+| #18 | 計画立案エンジン & Gate 1 | 8 | P1 | #6, #11, #15, #17 |
+| #19 | ステップ実行エンジン & OODA | 9 | P1 | #5, #6, #8, #11, #18 |
+| #20 | 成果物ドラフト生成 & Gate 2 | 9 | P1 | #12, #19 |
+| #21 | 自己評価エンジン | 10 | P1 | #12, #20 |
+| #22 | 改善ループ | 10 | P1 | #14, #19, #20, #21 |
+| #23 | 可観測性 | 11 | P1 | #3, #4, #9 |
+| #24 | 成果物バージョニング | 12 | P2 | #20, #22 |
+| #25 | 単体テスト & 安全性テスト | 13 | P2 | #4, #5, #6, #7, #8, #14, #15 |
+| #26 | E2E シナリオテスト & ベンチマーク | 13 | P2 | #22, #23 |
+| #27 | brownfield 対応 | 14 | P2 | #2, #11, #14, #15 |
+
+# 実装順序（推奨）
+
+## Phase 1: 安全な骨格（P0 — Issue #1〜#10）
+```
+#1 → #2 ─┐
+          ├→ #6 ─┐
+#1 → #3 ─┤       ├→ #7 ─┐
+          ├→ #4 ─┤       │
+          │      ├→ #5 ──┤
+          ├→ #8 ─┘       │
+          └───────────────┴→ #9 → #10
+```
+
+## Phase 2: 自律リサーチ能力（P1 — Issue #11〜#23）
+```
+#11 → #12 ─→ #17 ─→ #18 ─→ #19 ─→ #20 ─→ #21 ─→ #22
+                                     ↑
+#14 ──────────────────────────────────┤
+#15 ──────────┬→ #16                  │
+              └→ #18 ─────────────────┘
+#13（CLI拡張）  #23（可観測性）  ← 並行着手可能
+```
+
+## Phase 3: 運用品質（P2 — Issue #24〜#27）
+```
+#24（成果物管理）  #25（テスト）  #26（ベンチマーク）  #27（brownfield）
+  ← 並行着手可能 →
+```
+```
+
+全27 Issue です。Issue 番号はそのまま GitHub 上の実際の番号に読み替え、Depends on のリンクを実際の Issue URL に差し替えれば、そのまま起票できます。起票を自動化する場合はお知らせください。
